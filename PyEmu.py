@@ -25,7 +25,7 @@ from PyOS import *
 '''
 PyEmu:
 
-    This main emulator class.  This class implements the public methods
+    The main emulator class.  This class implements the public methods
     for controlling the emulator.  This includes handlers, and initialization.
 '''
 class PyEmu:

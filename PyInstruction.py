@@ -185,9 +185,9 @@ class PyInstruction:
         
         return False   
 	
-	#
-	# set_instruction: Initializes the class members from pydasm
-	#
+    #
+    # set_instruction: Initializes the class members from pydasm
+    #
     def set_instruction(self, instruction):
         self.length = instruction.length
         self.type = instruction.type

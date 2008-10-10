@@ -179,17 +179,9 @@ class PyMemory:
                             try:
                                 rawbytes += self.pages[page].data[offset+y]
                             except:
-                                print "size %x, %x, %x" % (size, x, size - x)
-                                print "raw %x" % len(rawbytes)
-                                val = list(self.pages.keys())
-                                val.sort()
-                                for key in val:
-                                    #print "0x%08x (%x)" % (key, len(self.pages[key].data))
-                                    print "0x%08x" % key
-                                print "problem %x, %x, %x" % (page, offset, y)
-                                raise Exception("blah")
-                                #rawbytes = self.pages[0x13000].data[0x1000]
-                                #return rawbytes
+                                # XXX Needs proper debugging messages
+                                print "problem page %x, offset %x, y %x" % (page, offset, y)
+                                raise Exception("Problem fetching bytes from page cache")
                         
                         break
                         
