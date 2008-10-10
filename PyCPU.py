@@ -145,6 +145,7 @@ class PyCPU:
                                         "or": lambda instruction: self.OR(instruction),
                                         "pop": lambda instruction: self.POP(instruction),
                                         "push": lambda instruction: self.PUSH(instruction),
+                                        "pusha": lambda instruction: self.PUSHA(instruction),
                                         "rcr": lambda instruction: self.RCR(instruction),
                                         "rcl": lambda instruction: self.RCL(instruction),
                                         "ret": lambda instruction: self.RET(instruction),
@@ -1283,7 +1284,12 @@ class PyCPU:
                 
                 if not result:
                     return False
-                
+                else:
+                    return result
+            else:
+                print "[*] Need a handler"
+                return False
+                       
         oldeip = self.EIP
         
         # Fetch raw instruction from memory
@@ -1809,7 +1815,12 @@ class PyCPU:
         
         print "ESP:"
         for x in xrange(0, count, 4):
-            print "0x%08x: %x" % (self.ESP + (count / 2) - x, self.get_memory32(self.ESP + (count / 2) - x))
+            address = self.ESP + (count / 2) - x
+            
+            if not self.emu.memory.is_valid(address):
+                return False
+                
+            print "0x%08x: %x" % (address, self.get_memory32(address))
         print "\n"
         
         if not self.emu.memory.is_valid(self.EBP):
@@ -1817,7 +1828,11 @@ class PyCPU:
             
         print "EBP:"
         for x in xrange(0, count, 4):
-            print "0x%08x: %x" % (self.EBP + (count / 2) - x, self.get_memory32(self.EBP + (count / 2) - x))
+            address = self.EBP + (count / 2) - x
+            if not self.emu.memory.is_valid(address):
+                return False
+            
+            print "0x%08x: %x" % (address, self.get_memory32(address))
         print "\n"
         
         return True
@@ -8834,7 +8849,94 @@ class PyCPU:
                 
         return True
 
+    def PUSHA(self, instruction):
+        op1 = instruction.op1
+        op2 = instruction.op2
 
+        so = instruction.operand_so()
+        ao = instruction.address_so()
+        
+
+        op1value = ""
+        op2value = ""
+        op3value = ""
+        op1valuederef = None
+        op2valuederef = None
+
+        #60 PUSHA Invalid Valid Push AX, CX, DX, BX, original SP, BP, SI, and DI.
+        #60 PUSHAD Invalid Valid Push EAX, ECX, EDX, EBX, original ESP, EBP,ESI, and EDI.
+        if instruction.opcode == 0x60:
+            if so:
+                size = 2
+            else:
+                size = 4
+                
+            # Do logic
+            # Save our esp before we start so we can push it
+            temp_esp = self.get_register32("ESP")
+            
+            # EAX
+            esp = self.get_register32("ESP") - 4
+            self.set_memory32(esp, self.get_register32("EAX"))
+            self.set_register32("ESP", esp)
+
+            # ECX
+            esp = self.get_register32("ESP") - 4
+            self.set_memory32(esp, self.get_register32("ECX"))
+            self.set_register32("ESP", esp)
+            
+            # EDX
+            esp = self.get_register32("ESP") - 4
+            self.set_memory32(esp, self.get_register32("EDX"))
+            self.set_register32("ESP", esp)
+            
+            # EBX
+            esp = self.get_register32("ESP") - 4
+            self.set_memory32(esp, self.get_register32("EBX"))
+            self.set_register32("ESP", esp)
+            
+            # ESP
+            esp = self.get_register32("ESP") - 4
+            self.set_memory32(esp, temp_esp)
+            self.set_register32("ESP", esp)
+            
+            # EBP
+            esp = self.get_register32("ESP") - 4
+            self.set_memory32(esp, self.get_register32("EBP"))
+            self.set_register32("ESP", esp)
+            
+            # ESI
+            esp = self.get_register32("ESP") - 4
+            self.set_memory32(esp, self.get_register32("ESI"))
+            self.set_register32("ESP", esp)
+            
+            # EDI
+            esp = self.get_register32("ESP") - 4
+            self.set_memory32(esp, self.get_register32("EDI"))
+            self.set_register32("ESP", esp)
+
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+        else:
+            return False
+
+        mnemonic = instruction.mnemonic.upper()
+        if mnemonic in self.emu.mnemonic_handlers:
+            if op1valuederef != None and op2valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+            elif op2valuederef != None and op1valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+            else:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2value, op3value)
+                
+        return True
+        
     def RCR(self, instruction):
         op1 = instruction.op1
         op2 = instruction.op2
