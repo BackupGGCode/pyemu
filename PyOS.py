@@ -86,13 +86,23 @@ class PyWindows:
         address = windll.kernel32.GetProcAddress(handle, function)
         windll.kernel32.FreeLibrary(handle)
         
-        if self.DEBUG >= 1:
-            print "[*] Adding library %s address 0x%08x" % (function, address)
+        #if self.DEBUG >= 1:
+        print "[*] Adding library %s address 0x%08x" % (function, address)
         
         self.libraries[address] = {'dll': dllname, 'address': address, 'name': function}
         
         return True
+    
+    #
+    # get_library_address: Returns the address for the specified library
+    #
+    def get_library_address(self, function):
+        for key in self.libraries.keys():
+            if function == self.libraries[key]['name']:
+                return key
         
+        return False
+            
     #
     # get_selector: Responsible for looking up the LDT offset requested
     #               Currently this is not very robust, in time it wll be
