@@ -433,6 +433,7 @@ class PyEmu:
     
     #
     # get_memory: A public method for fetching arbitrary memory
+    #
     def get_memory(self, address, size=0):
         if not size:
             size = 4
@@ -441,7 +442,23 @@ class PyEmu:
         result = self.memory.get_memory(address, size)
         
         return result
-                
+    
+    #
+    # get_memory_string: A public method to fetch a string from memory
+    #
+    def get_memory_string(self, address):
+        s = ""
+        x = 0
+        while True:
+            b = self.get_memory(address + x, size=1)
+            if b != 0x00:
+                s += chr(b)
+            else:
+                break
+            x += 1
+        
+        return s
+            
     #
     # set_memory: A public method for setting arbitrary memory
     #
