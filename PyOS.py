@@ -77,19 +77,26 @@ class PyWindows:
     # add_library: Handles addition of libraries to the OS.  This lets us
     #              call any user handlers when we call into this function
     #
-    def add_library(self, dllname, function):
+    def add_library(self, dll, function):
         for library in self.libraries:
             if function == self.libraries[library]['name']:
                 return True
 
-        handle  = windll.kernel32.LoadLibraryA(dllname)
-        address = windll.kernel32.GetProcAddress(handle, function)
-        windll.kernel32.FreeLibrary(handle)
+        # Grab a handle if we dont have it based on the dll name
+        if isinstance(dll, str):
+            handle  = windll.kernel32.LoadLibraryA(dll)
+            address = windll.kernel32.GetProcAddress(handle, function)
+        elif isinstance(dll, long):
+            handle = dll
+            address = windll.kernel32.GetProcAddress(handle, function)
+        else:
+            print "[!] Dont understand dll"
+            return False
+                
+        if self.DEBUG >= 1:
+            print "[*] Adding library %s address 0x%08x" % (function, address)
         
-        #if self.DEBUG >= 1:
-        print "[*] Adding library %s address 0x%08x" % (function, address)
-        
-        self.libraries[address] = {'dll': dllname, 'address': address, 'name': function}
+        self.libraries[address] = {'address': address, 'name': function}
         
         return True
     

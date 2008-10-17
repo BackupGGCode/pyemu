@@ -112,25 +112,21 @@ class PyMemory:
         offset = address & 0x00000fff
         
         (d, m) = divmod(size, self.PAGESIZE)
-        print d, m
         
-        #pages = range(page, page + (d * self.PAGESIZE) + m, self.PAGESIZE)
         pages = range(page, page + (d * self.PAGESIZE), self.PAGESIZE)
         for page in pages:
-            print "%08x" % page
             if page not in self.pages:
                 print "[!] 0x%08x not in our pages" % page
-                raise Exception('dumb')
+                raise Exception('This page does not exist')
             
             for b in range(self.PAGESIZE - 1):
                 rawbytes += self.pages[page].data[b]
         
         if m:
             page = (address + size) & 0xfffff000
-            print "*%08x" % page
             if page not in self.pages:
                     print "[!] 0x%08x not in our pages" % page
-                    raise Exception('dumb')
+                    raise Exception('This page does not exist')
                     
             for b in range(m):
                 rawbytes += self.pages[page].data[b]
@@ -303,6 +299,19 @@ class PyMemory:
         return False
     
     #
+    # get_available_page: Will return the next available page starting from address
+    #
+    def get_available_page(self, address):
+        page = address & 0xfffff000
+        
+        while True:
+            if page not in self.pages:
+                break
+            page += self.PAGESIZE
+            
+        return page
+            
+    #
     # is_valid: A helper function to check for a address in our cache
     #
     def is_valid(self, address):
@@ -320,7 +329,26 @@ class PyMemory:
     
     def set_debug(self, level):
         self.DEBUG = level
-    
+
+    #
+    # dump_memory: This dumps the data from memory optionally writing
+    #              to a supplied file
+    #
+    def dump_memory(self, filename=None):
+        if filename:
+            handle = open(filename, "wb")
+        else:
+            handle = sys.stdout
+        
+        for addr in self.pages.keys():
+            data = self.pages[addr].get_data()
+            handle.write(data)
+        
+        if filename:
+            handle.close()
+            
+        return True
+        
     #
     # dump_pages: This will dump all the currently cached memory pages.
     #             This could potentially be a lot of data.
@@ -353,7 +381,7 @@ class PyDbgMemory(PyMemory):
     # 
     def allocate_page(self, page):
         newpage = PyMemoryPage(page)
-        newpage.set_data("A" * newpage.PAGESIZE)
+        newpage.set_data("\x00" * newpage.PAGESIZE)
         newpage.set_rwx()
         
         self.pages[page] = newpage
@@ -397,7 +425,7 @@ class IDAMemory(PyMemory):
     #
     def allocate_page(self, page):
         newpage = PyMemoryPage(page)
-        newpage.set_data("A" * newpage.PAGESIZE)
+        newpage.set_data("\x00" * newpage.PAGESIZE)
         newpage.set_rwx()
         
         self.pages[page] = newpage
@@ -431,12 +459,31 @@ class PEMemory(PyMemory):
     #
     def allocate_page(self, page):
         newpage = PyMemoryPage(page)
-        newpage.set_data("A" * newpage.PAGESIZE)
+        newpage.set_data("\x00" * newpage.PAGESIZE)
         newpage.set_rwx()
         
         self.pages[page] = newpage
         
         return True
+    
+    #
+    # allocate: Allocates a block of memory
+    #
+    def allocate(self, size):
+        print "XXX - Doesnt work"
+        sys.exit(-1)
+        (num, rem) = divmod(size, self.PAGESIZE)
+        if rem:
+            num += 1
+        pagenum = num
+        
+        page = self.get_available_page()
+        if not self.allocate_page(page):
+            print "[!] Error allocating page %x" % page
+            return False
+        
+        return address
+        
     #
     # get_page: Stores a page in the base class cache
     #

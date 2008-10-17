@@ -720,7 +720,7 @@ class PyEmu:
         self.cpu.dump_regs()
     
     #
-    # dump_stack: A public method to dump the stack from EBP
+    # dump_stack: A public method to dump the stack from ESP and EBP
     #
     def dump_stack(self, count=64):
         self.cpu.dump_stack(count)

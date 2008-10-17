@@ -131,6 +131,9 @@ class PyCPU:
                                         "jz": lambda instruction: self.JZ(instruction),
                                         "lea": lambda instruction: self.LEA(instruction),
                                         "leave": lambda instruction: self.LEAVE(instruction),
+                                        "loop": lambda instruction: self.LOOP(instruction),
+                                        "loope": lambda instruction: self.LOOPE(instruction),
+                                        "loopne": lambda instruction: self.LOOPNE(instruction),            
                                         "mov": lambda instruction: self.MOV(instruction),
                                         "movs": lambda instruction: self.MOVS(instruction),
                                         "movsb": lambda instruction: self.MOVSB(instruction),
@@ -144,6 +147,7 @@ class PyCPU:
                                         "not": lambda instruction: self.NOT(instruction),
                                         "or": lambda instruction: self.OR(instruction),
                                         "pop": lambda instruction: self.POP(instruction),
+                                        "popa": lambda instruction: self.POPA(instruction),    
                                         "push": lambda instruction: self.PUSH(instruction),
                                         "pusha": lambda instruction: self.PUSHA(instruction),
                                         "rcr": lambda instruction: self.RCR(instruction),
@@ -272,7 +276,7 @@ class PyCPU:
                 return self.EIP
         elif size == 2:
             # Registers
-            if   register == "AX" or register == 0:
+            if register == "AX" or register == 0:
                 register = "AX"
                 if register in self.emu.register_handlers:
                     self.emu.register_handlers[register](self.emu, register, self.EAX & 0xFFFF, "read")
@@ -1260,7 +1264,7 @@ class PyCPU:
         
         return signextended
     
-    # Swaps a dword bytes
+    # Swaps a dwords bytes
     def swap_bytes(self, value):
         return (((value & 0xff) << 24) | (((value & 0xff00) >> 8) << 16) | (((value & 0xff0000) >> 16) << 8) | ((value & 0xff000000) >> 24))
     
@@ -1272,7 +1276,8 @@ class PyCPU:
         
         # Check our program counter handlers
         if self.EIP in self.emu.pc_handlers:
-            self.emu.pc_handlers[self.EIP](self.emu, self.EIP)
+            if not self.emu.pc_handlers[self.EIP](self.emu, self.EIP):
+                return False
         
         if self.EIP in self.emu.os.libraries:
             library = self.emu.os.libraries[self.EIP]
@@ -1280,14 +1285,14 @@ class PyCPU:
                 print "[*] Calling 0x%08x:%s" % (self.EIP, library['name'])
             
             if library['name'] in self.emu.library_handlers:
-                result = self.emu.library_handlers[library['name']](library['name'], library['address'], library['dll'])
+                result = self.emu.library_handlers[library['name']](library['name'], library['address'])
                 
                 if not result:
                     return False
                 else:
                     return result
             else:
-                print "[*] Need a handler"
+                print "[*] Need a handler for [%s]" % (library)
                 return False
                        
         oldeip = self.EIP
@@ -1353,7 +1358,6 @@ class PyCPU:
             
             return False
  
-        
         # Call our convenience functions for mod/rm bytes
         mod = instruction.get_mod()
         rm = instruction.get_rm()
@@ -1362,7 +1366,7 @@ class PyCPU:
         scale = instruction.get_scale()
         index = instruction.get_index()
         base = instruction.get_base()
-        
+                
         if size == 2:
             # do 16 bit
             if mod == 0x0:
@@ -1478,7 +1482,7 @@ class PyCPU:
                             else:
                                 address = self.get_register16(base) + (self.get_register16(index) * 8)
                     
-                    address += (op.displacement & 0xff)
+                    address += op.displacement
                     
                     if self.DEBUG > 2:
                         print "[*] Fetching reg + sib + disp8 %x" % address
@@ -1677,9 +1681,9 @@ class PyCPU:
                                 address = self.get_register32(base)
                             else:
                                 address = self.get_register32(base) + (self.get_register32(index) * 8)
-                    
-                    address += (op.displacement & 0xff)
-                    
+
+                    address += op.displacement
+
                     if self.DEBUG > 2:
                         print "[*] Fetching reg + sib + disp8 %x" % address
                         
@@ -1820,7 +1824,7 @@ class PyCPU:
             if not self.emu.memory.is_valid(address):
                 return False
                 
-            print "0x%08x: %x" % (address, self.get_memory32(address))
+            print "0x%08x: %08x" % (address, self.get_memory32(address))
         print "\n"
         
         if not self.emu.memory.is_valid(self.EBP):
@@ -1832,7 +1836,7 @@ class PyCPU:
             if not self.emu.memory.is_valid(address):
                 return False
             
-            print "0x%08x: %x" % (address, self.get_memory32(address))
+            print "0x%08x: %08x" % (address, self.get_memory32(address))
         print "\n"
         
         return True
@@ -2688,6 +2692,44 @@ class PyCPU:
                 else:
                     self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
 
+        #80 /4 ib AND r/m8, imm8 r/m8 AND imm8
+        elif instruction.opcode == 0x80 and instruction.extindex == 0x4:
+
+            size = 1
+
+            if op1.type == pydasm.OPERAND_TYPE_REGISTER:
+                op1value = self.get_register(op1.reg, size)
+                op2value = op2.immediate & self.get_mask(size)
+
+                # Do logic
+                result = op1value & op2value
+
+                self.set_flags("LOGIC", op1value, op2value, result, size)
+
+                self.set_register(op1.reg, result, size)
+                
+            elif op1.type == pydasm.OPERAND_TYPE_MEMORY:
+                op1value = self.get_memory_address(instruction, 1, size)
+                op2value = op2.immediate & self.get_mask(size)
+
+                # Do logic
+                op1valuederef = self.get_memory(op1value, size)
+                
+                result = op1valuederef & op2value
+
+                self.set_flags("LOGIC", op1valuederef, op2value, result, size)
+
+                self.set_memory(op1value, result, size)
+
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+
         #81 /4 id AND r/m32,imm32 r/m32  imm32
         #81 /4 iw AND r/m16,imm16 r/m16  imm16
         elif instruction.opcode == 0x81 and instruction.extindex == 0x4:
@@ -3503,30 +3545,7 @@ class PyCPU:
             size = 1
             
             if ao:
-                if instruction.repe():
-                    repcount = self.get_register16("CX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.DS + self.get_register16("SI")
-                        op2value = self.ES + self.get_register16("DI")
-                        
-                        op1valuederef = self.get_memory(op1value, size)
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1valuederef - op2valuederef
-
-                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
-
-                        if not self.DF:
-                            self.set_register16("DI", op1value + size)
-                        else:
-                            self.set_register16("DI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register16("CX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register16("CX")
                     
                     while repcount and not self.ZF:
@@ -3539,11 +3558,34 @@ class PyCPU:
                         result = op1valuederef - op2valuederef
 
                         self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
+
+                        if not self.DF:
+                            self.set_register16("DI", op2value + size)
+                        else:
+                            self.set_register16("DI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register16("CX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register16("CX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.DS + self.get_register16("SI")
+                        op2value = self.ES + self.get_register16("DI")
+                        
+                        op1valuederef = self.get_memory(op1value, size)
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1valuederef - op2valuederef
+
+                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                         
                         if not self.DF:
-                            self.set_register16("DI", op1value + size)
+                            self.set_register16("DI", op2value + size)
                         else:
-                            self.set_register16("DI", op1value - size)
+                            self.set_register16("DI", op2value - size)
                         
                         repcount -= 1
 
@@ -3561,35 +3603,12 @@ class PyCPU:
                     self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                                         
                     if not self.DF:
-                        self.set_register16("DI", op1value + size)
+                        self.set_register16("DI", op2value + size)
                     else:
-                        self.set_register16("DI", op1value - size)
+                        self.set_register16("DI", op2value - size)
             
             else:
-                if instruction.repe():
-                    repcount = self.get_register32("ECX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.get_register32("ESI")
-                        op2value = self.get_register32("EDI")
-                        
-                        op1valuederef = self.get_memory(op1value, size)
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1valuederef - op2valuederef
-
-                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
-                        
-                        if not self.DF:
-                            self.set_register32("EDI", op1value + size)
-                        else:
-                            self.set_register32("EDI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register32("ECX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register32("ECX")
                     
                     while repcount and not self.ZF:
@@ -3604,9 +3623,32 @@ class PyCPU:
                         self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                         
                         if not self.DF:
-                            self.set_register32("EDI", op1value + size)
+                            self.set_register32("EDI", op2value + size)
                         else:
-                            self.set_register32("EDI", op1value - size)
+                            self.set_register32("EDI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register32("ECX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register32("ECX")
+                    
+                    while repcount and not self.ZF:
+                        op1value = self.get_register32("ESI")
+                        op2value = self.get_register32("EDI")
+                        
+                        op1valuederef = self.get_memory(op1value, size)
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1valuederef - op2valuederef
+
+                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
+                        
+                        if not self.DF:
+                            self.set_register32("EDI", op2value + size)
+                        else:
+                            self.set_register32("EDI", op2value - size)
                         
                         repcount -= 1
 
@@ -3624,9 +3666,9 @@ class PyCPU:
                     self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                                         
                     if not self.DF:
-                        self.set_register32("EDI", op1value + size)
+                        self.set_register32("EDI", op2value + size)
                     else:
-                        self.set_register32("EDI", op1value - size)
+                        self.set_register32("EDI", op2value - size)
                         
             opcode = instruction.opcode
             if opcode in self.emu.opcode_handlers:
@@ -3671,30 +3713,7 @@ class PyCPU:
             size = 2
             
             if ao:
-                if instruction.repe():
-                    repcount = self.get_register16("CX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.DS + self.get_register16("SI")
-                        op2value = self.ES + self.get_register16("DI")
-                        
-                        op1valuederef = self.get_memory(op1value, size)
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1valuederef - op2valuederef
-
-                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
-
-                        if not self.DF:
-                            self.set_register16("DI", op1value + size)
-                        else:
-                            self.set_register16("DI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register16("CX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register16("CX")
                     
                     while repcount and not self.ZF:
@@ -3707,11 +3726,34 @@ class PyCPU:
                         result = op1valuederef - op2valuederef
 
                         self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
+
+                        if not self.DF:
+                            self.set_register16("DI", op2value + size)
+                        else:
+                            self.set_register16("DI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register16("CX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register16("CX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.DS + self.get_register16("SI")
+                        op2value = self.ES + self.get_register16("DI")
+                        
+                        op1valuederef = self.get_memory(op1value, size)
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1valuederef - op2valuederef
+
+                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                         
                         if not self.DF:
-                            self.set_register16("DI", op1value + size)
+                            self.set_register16("DI", op2value + size)
                         else:
-                            self.set_register16("DI", op1value - size)
+                            self.set_register16("DI", op2value - size)
                         
                         repcount -= 1
 
@@ -3729,35 +3771,12 @@ class PyCPU:
                     self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                                         
                     if not self.DF:
-                        self.set_register16("DI", op1value + size)
+                        self.set_register16("DI", op1va2ue + size)
                     else:
-                        self.set_register16("DI", op1value - size)
+                        self.set_register16("DI", op1va2ue - size)
             
             else:
-                if instruction.repe():
-                    repcount = self.get_register32("ECX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.get_register32("ESI")
-                        op2value = self.get_register32("EDI")
-                        
-                        op1valuederef = self.get_memory(op1value, size)
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1valuederef - op2valuederef
-
-                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
-                        
-                        if not self.DF:
-                            self.set_register32("EDI", op1value + size)
-                        else:
-                            self.set_register32("EDI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register32("ECX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register32("ECX")
                     
                     while repcount and not self.ZF:
@@ -3772,9 +3791,32 @@ class PyCPU:
                         self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                         
                         if not self.DF:
-                            self.set_register32("EDI", op1value + size)
+                            self.set_register32("EDI", op2value + size)
                         else:
-                            self.set_register32("EDI", op1value - size)
+                            self.set_register32("EDI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register32("ECX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register32("ECX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.get_register32("ESI")
+                        op2value = self.get_register32("EDI")
+                        
+                        op1valuederef = self.get_memory(op1value, size)
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1valuederef - op2valuederef
+
+                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
+                        
+                        if not self.DF:
+                            self.set_register32("EDI", op2value + size)
+                        else:
+                            self.set_register32("EDI", op2value - size)
                         
                         repcount -= 1
 
@@ -3792,9 +3834,9 @@ class PyCPU:
                     self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                                         
                     if not self.DF:
-                        self.set_register32("EDI", op1value + size)
+                        self.set_register32("EDI", op2value + size)
                     else:
-                        self.set_register32("EDI", op1value - size)
+                        self.set_register32("EDI", op2value - size)
                         
             opcode = instruction.opcode
             if opcode in self.emu.opcode_handlers:
@@ -3839,30 +3881,7 @@ class PyCPU:
             size = 4
             
             if ao:
-                if instruction.repe():
-                    repcount = self.get_register16("CX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.DS + self.get_register16("SI")
-                        op2value = self.ES + self.get_register16("DI")
-                        
-                        op1valuederef = self.get_memory(op1value, size)
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1valuederef - op2valuederef
-
-                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
-
-                        if not self.DF:
-                            self.set_register16("DI", op1value + size)
-                        else:
-                            self.set_register16("DI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register16("CX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register16("CX")
                     
                     while repcount and not self.ZF:
@@ -3875,11 +3894,34 @@ class PyCPU:
                         result = op1valuederef - op2valuederef
 
                         self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
+
+                        if not self.DF:
+                            self.set_register16("DI", op2value + size)
+                        else:
+                            self.set_register16("DI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register16("CX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register16("CX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.DS + self.get_register16("SI")
+                        op2value = self.ES + self.get_register16("DI")
+                        
+                        op1valuederef = self.get_memory(op1value, size)
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1valuederef - op2valuederef
+
+                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                         
                         if not self.DF:
-                            self.set_register16("DI", op1value + size)
+                            self.set_register16("DI", op2value + size)
                         else:
-                            self.set_register16("DI", op1value - size)
+                            self.set_register16("DI", op2value - size)
                         
                         repcount -= 1
 
@@ -3897,35 +3939,12 @@ class PyCPU:
                     self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                                         
                     if not self.DF:
-                        self.set_register16("DI", op1value + size)
+                        self.set_register16("DI", op2value + size)
                     else:
-                        self.set_register16("DI", op1value - size)
+                        self.set_register16("DI", op2value - size)
             
             else:
-                if instruction.repe():
-                    repcount = self.get_register32("ECX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.get_register32("ESI")
-                        op2value = self.get_register32("EDI")
-                        
-                        op1valuederef = self.get_memory(op1value, size)
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1valuederef - op2valuederef
-
-                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
-                        
-                        if not self.DF:
-                            self.set_register32("EDI", op1value + size)
-                        else:
-                            self.set_register32("EDI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register32("ECX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register32("ECX")
                     
                     while repcount and not self.ZF:
@@ -3940,9 +3959,32 @@ class PyCPU:
                         self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                         
                         if not self.DF:
-                            self.set_register32("EDI", op1value + size)
+                            self.set_register32("EDI", op2value + size)
                         else:
-                            self.set_register32("EDI", op1value - size)
+                            self.set_register32("EDI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register32("ECX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register32("ECX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.get_register32("ESI")
+                        op2value = self.get_register32("EDI")
+                        
+                        op1valuederef = self.get_memory(op1value, size)
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1valuederef - op2valuederef
+
+                        self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
+                        
+                        if not self.DF:
+                            self.set_register32("EDI", op2value + size)
+                        else:
+                            self.set_register32("EDI", op2value - size)
                         
                         repcount -= 1
 
@@ -3960,9 +4002,9 @@ class PyCPU:
                     self.set_flags("CMP", op1valuederef, op2valuederef, result, size)
                                         
                     if not self.DF:
-                        self.set_register32("EDI", op1value + size)
+                        self.set_register32("EDI", op2value + size)
                     else:
-                        self.set_register32("EDI", op1value - size)
+                        self.set_register32("EDI", op2value - size)
                         
             opcode = instruction.opcode
             if opcode in self.emu.opcode_handlers:
@@ -6617,7 +6659,6 @@ class PyCPU:
         #C9 LEAVE Set SP to BP, then pop BP
         if instruction.opcode == 0xc9:
 
-
             # Do logic
             ebp = self.get_register32("EBP")
             newebp = self.get_memory32(ebp)
@@ -6634,6 +6675,182 @@ class PyCPU:
                 else:
                     self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
 
+        else:
+            return False
+
+        mnemonic = instruction.mnemonic.upper()
+        if mnemonic in self.emu.mnemonic_handlers:
+            if op1valuederef != None and op2valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+            elif op2valuederef != None and op1valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+            else:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2value, op3value)
+                
+        return True
+
+    def LOOP(self, instruction):
+        op1 = instruction.op1
+        op2 = instruction.op2
+
+        so = instruction.operand_so()
+        ao = instruction.address_so()
+        
+
+        op1value = ""
+        op2value = ""
+        op3value = ""
+        op1valuederef = None
+        op2valuederef = None
+
+        #E2 cb LOOP rel8 Decrement count; jump short if count != 0.
+        if instruction.opcode == 0xe2:
+
+            if so:
+                size = 2
+            else:
+                size = 4
+
+            op1value = op1.immediate
+            count = self.get_register(1, size) - 1
+            
+            # Do logic
+            if count:
+                eip = self.get_register32("EIP") + instruction.length + op1value
+
+                if so:
+                    eip = eip & 0xffff
+
+                self.set_register32("EIP", eip)
+            
+            self.set_register("ECX", count, size)
+            
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+        else:
+            return False
+
+        mnemonic = instruction.mnemonic.upper()
+        if mnemonic in self.emu.mnemonic_handlers:
+            if op1valuederef != None and op2valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+            elif op2valuederef != None and op1valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+            else:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2value, op3value)
+                
+        return True
+
+
+    def LOOPE(self, instruction):
+        op1 = instruction.op1
+        op2 = instruction.op2
+
+        so = instruction.operand_so()
+        ao = instruction.address_so()
+        
+
+        op1value = ""
+        op2value = ""
+        op3value = ""
+        op1valuederef = None
+        op2valuederef = None
+
+        #E1 cb LOOPE rel8 Valid Valid Decrement count; jump short if count != 0 and ZF = 1.
+        if instruction.opcode == 0xe1:
+
+            if so:
+                size = 2
+            else:
+                size = 4
+
+            op1value = op1.immediate
+            count = self.get_register("ECX", size) - 1
+            
+            # Do logic
+            if count and self.ZF:
+                eip = self.get_register32("EIP") + instruction.length + op1value
+
+                if so:
+                    eip = eip & 0xffff
+
+                self.set_register32("EIP", eip)
+            
+            self.set_register("ECX", count, size)
+            
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+        else:
+            return False
+
+        mnemonic = instruction.mnemonic.upper()
+        if mnemonic in self.emu.mnemonic_handlers:
+            if op1valuederef != None and op2valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+            elif op2valuederef != None and op1valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+            else:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2value, op3value)
+                
+        return True
+
+
+    def LOOPNE(self, instruction):
+        op1 = instruction.op1
+        op2 = instruction.op2
+
+        so = instruction.operand_so()
+        ao = instruction.address_so()
+        
+
+        op1value = ""
+        op2value = ""
+        op3value = ""
+        op1valuederef = None
+        op2valuederef = None
+
+        #E0 cb LOOPNE rel8 Decrement count; jump short if count != 0 and ZF = 0.
+        if instruction.opcode == 0xe1:
+
+            if so:
+                size = 2
+            else:
+                size = 4
+
+            op1value = op1.immediate
+            count = self.get_register("ECX", size) - 1
+            
+            # Do logic
+            if count and not self.ZF:
+                eip = self.get_register32("EIP") + instruction.length + op1value
+
+                if so:
+                    eip = eip & 0xffff
+
+                self.set_register32("EIP", eip)
+            
+            self.set_register("ECX", count, size)
+            
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
         else:
             return False
 
@@ -6863,7 +7080,7 @@ class PyCPU:
                     offset = op2.displacement
                     baseaddress = self.emu.get_selector(fs).base
                     
-                    op1value = self.get_memory(baseaddress + offset, size)
+                    op1value = self.get_memory(baseaddress + offset, asize)
                 else:
                     op1value = self.get_memory_address(instruction, 1, asize)
                     
@@ -8658,6 +8875,97 @@ class PyCPU:
                 
         return True
 
+    def POPA(self, instruction):
+        op1 = instruction.op1
+        op2 = instruction.op2
+
+        so = instruction.operand_so()
+        ao = instruction.address_so()
+        
+
+        op1value = ""
+        op2value = ""
+        op3value = ""
+        op1valuederef = None
+        op2valuederef = None
+
+        #61 POPA Pop DI, SI, BP, BX, DX, CX, and AX
+        #61 POPAD Pop EDI, ESI, EBP, EBX, EDX, ECX, and EAX
+        if instruction.opcode == 0x61:
+            if so:
+                size = 2
+            else:
+                size = 4
+                
+            # Do logic
+            # EDI
+            esp = self.get_register32("ESP")
+            value = self.get_memory32(esp)
+            self.set_register(7, value, size)
+            self.set_register32("ESP", esp + size)
+            
+            # ESI
+            esp = self.get_register32("ESP")
+            value = self.get_memory32(esp)
+            self.set_register(6, value, size)
+            self.set_register32("ESP", esp + size)
+            
+            # EBP
+            esp = self.get_register32("ESP")
+            value = self.get_memory32(esp)
+            self.set_register(5, value, size)
+            self.set_register32("ESP", esp + size)
+            
+            # ESP
+            esp = self.get_register32("ESP")
+            self.set_register32("ESP", esp + size)
+            
+            # EBX
+            esp = self.get_register32("ESP")
+            value = self.get_memory32(esp)
+            self.set_register(3, value, size)
+            self.set_register32("ESP", esp + size)
+            
+            # EDX
+            esp = self.get_register32("ESP")
+            value = self.get_memory32(esp)
+            self.set_register(2, value, size)
+            self.set_register32("ESP", esp + size)
+            
+            # ECX
+            esp = self.get_register32("ESP")
+            value = self.get_memory32(esp)
+            self.set_register(1, value, size)
+            self.set_register32("ESP", esp + size)
+            
+            # EAX
+            esp = self.get_register32("ESP")
+            value = self.get_memory32(esp)
+            self.set_register(0, value, size)
+            self.set_register32("ESP", esp + size)
+           
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+        else:
+            return False
+
+        mnemonic = instruction.mnemonic.upper()
+        if mnemonic in self.emu.mnemonic_handlers:
+            if op1valuederef != None and op2valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+            elif op2valuederef != None and op1valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+            else:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2value, op3value)
+                
+        return True
+        
 
     def PUSH(self, instruction):
         op1 = instruction.op1
@@ -9334,7 +9642,7 @@ class PyCPU:
                 
                 while tempcount:
                     tempcf = self.get_msb(op1value, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1value = ((op1value * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                 
@@ -9354,7 +9662,7 @@ class PyCPU:
                 
                 while tempcount:
                     tempcf = self.get_msb(op1valuederef, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1valuederef = ((op1valuederef * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
 
@@ -9393,7 +9701,7 @@ class PyCPU:
 
                 while tempcount:
                     tempcf = self.get_msb(op1value, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1value = ((op1value * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                     
@@ -9416,12 +9724,12 @@ class PyCPU:
     
                 while tempcount:
                     tempcf = self.get_msb(op1valuederef, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1value = ((op1valuederef * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                 
                 if op2value == 1:
-                    self.OF = self.get_msb(op1value, size) ^ self.CF
+                    self.OF = self.get_msb(op1valuederef, size) ^ self.CF
             
                 self.set_memory(op1value, op1valuederef, size)
                 
@@ -9447,7 +9755,7 @@ class PyCPU:
  
                 while tempcount:
                     tempcf = self.get_msb(op1value, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1value = ((op1value * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                     
@@ -9467,7 +9775,7 @@ class PyCPU:
        
                 while tempcount:
                     tempcf = self.get_msb(op1valuederef, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1valuederef = ((op1valuederef * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                     
@@ -9506,7 +9814,7 @@ class PyCPU:
 
                 while tempcount:
                     tempcf = self.get_msb(op1value, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1value = ((op1value * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                     
@@ -9529,7 +9837,7 @@ class PyCPU:
    
                 while tempcount:
                     tempcf = self.get_msb(op1valuederef, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1valuederef = ((op1valuederef * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                     
@@ -9561,7 +9869,7 @@ class PyCPU:
 
                 while tempcount:
                     tempcf = self.get_msb(op1value, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1value = ((op1value * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                 
@@ -9581,7 +9889,7 @@ class PyCPU:
 
                 while tempcount:
                     tempcf = self.get_msb(op1valuederef, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1valuederef = ((op1valuederef * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                 
@@ -9620,7 +9928,7 @@ class PyCPU:
 
                 while tempcount:
                     tempcf = self.get_msb(op1value, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1value = ((op1value * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                     
@@ -9643,7 +9951,7 @@ class PyCPU:
 
                 while tempcount:
                     tempcf = self.get_msb(op1valuederef, size)
-                    op1value = (op1value * 2) + self.CF
+                    op1valuederef = ((op1valuederef * 2) + self.CF) & self.get_mask(size)
                     self.CF = tempcf
                     tempcount -= 1
                     
@@ -9796,7 +10104,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1value, size)
-                        op1value = (op1value * 2) + tempcf
+                        op1value = ((op1value * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1value)
@@ -9818,7 +10126,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1valuederef, size)
-                        op1value = (op1valuederef * 2) + tempcf
+                        op1value = ((op1valuederef * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1valuederef)
@@ -9859,7 +10167,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1value, size)
-                        op1value = (op1value * 2) + tempcf
+                        op1value = ((op1value * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1value)
@@ -9884,7 +10192,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1valuederef, size)
-                        op1value = (op1valuederef * 2) + tempcf
+                        op1valuederef = ((op1valuederef * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1valuederef)
@@ -9917,7 +10225,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1value, size)
-                        op1value = (op1value * 2) + tempcf
+                        op1value = ((op1value * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1value)
@@ -9939,7 +10247,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1valuederef, size)
-                        op1value = (op1valuederef * 2) + tempcf
+                        op1valuederef = ((op1valuederef * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1valuederef)
@@ -9980,7 +10288,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1value, size)
-                        op1value = (op1value * 2) + tempcf
+                        op1value = ((op1value * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1value)
@@ -10005,7 +10313,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1valuederef, size)
-                        op1value = (op1valuederef * 2) + tempcf
+                        op1valuederef = ((op1valuederef * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1valuederef)
@@ -10039,7 +10347,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1value, size)
-                        op1value = (op1value * 2) + tempcf
+                        op1value = ((op1value * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1value)
@@ -10061,7 +10369,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1valuederef, size)
-                        op1value = (op1valuederef * 2) + tempcf
+                        op1valuederef = ((op1valuederef * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1valuederef)
@@ -10102,7 +10410,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1value, size)
-                        op1value = (op1value * 2) + tempcf
+                        op1value = ((op1value * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1value)
@@ -10127,7 +10435,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_msb(op1valuederef, size)
-                        op1value = (op1valuederef * 2) + tempcf
+                        op1valuederef = ((op1valuederef * 2) + tempcf) & self.get_mask(size)
                         tempcount -= 1
                         
                     self.CF = self.get_lsb(op1valuederef)
@@ -10210,14 +10518,14 @@ class PyCPU:
                 
                 if tempcount > 0:
                     while tempcount:
-                        tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** size)
+                        tempcf = self.get_lsb(op1valuederef)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** size)
                         tempcount -= 1
                         
-                    self.CF = self.get_msb(op1value, size)
+                    self.CF = self.get_msb(op1valuederef, size)
                     
                     if op2value == 1:
-                        self.OF = self.get_msb(op1value, size) ^ (self.get_msb(op1value, size) - 1)
+                        self.OF = self.get_msb(op1valuederef, size) ^ (self.get_msb(op1value, size) - 1)
                 
                 self.set_memory(op1value, op1valuederef, size)
                 
@@ -10276,14 +10584,14 @@ class PyCPU:
     
                 if tempcount > 0:
                     while tempcount:
-                        tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** size)
+                        tempcf = self.get_lsb(op1valuederef)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** size)
                         tempcount -= 1
                         
-                    self.CF = self.get_msb(op1value, size)
+                    self.CF = self.get_msb(op1valuederef, size)
                     
                     if op2value == 1:
-                        self.OF = self.get_msb(op1value, size) ^ (self.get_msb(op1value, size) - 1)
+                        self.OF = self.get_msb(op1valuederef, size) ^ (self.get_msb(op1valuederef, size) - 1)
                 
                 self.set_memory(op1value, op1valuederef, size)
             
@@ -10331,14 +10639,14 @@ class PyCPU:
        
                 if tempcount > 0:
                     while tempcount:
-                        tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** size)
+                        tempcf = self.get_lsb(op1valuederef)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** size)
                         tempcount -= 1
                         
-                    self.CF = self.get_msb(op1value, size)
+                    self.CF = self.get_msb(op1valuederef, size)
                     
                     if op2value == 1:
-                        self.OF = self.get_msb(op1value, size) ^ (self.get_msb(op1value, size) - 1)
+                        self.OF = self.get_msb(op1valuederef, size) ^ (self.get_msb(op1valuederef, size) - 1)
                 
                 self.set_memory(op1value, op1valuederef, size)
                          
@@ -10397,14 +10705,14 @@ class PyCPU:
    
                 if tempcount > 0:
                     while tempcount:
-                        tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** size)
+                        tempcf = self.get_lsb(op1valuederef)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** size)
                         tempcount -= 1
                         
-                    self.CF = self.get_msb(op1value, size)
+                    self.CF = self.get_msb(op1valuederef, size)
                     
                     if op2value == 1:
-                        self.OF = self.get_msb(op1value, size) ^ (self.get_msb(op1value, size) - 1)
+                        self.OF = self.get_msb(op1valuederef, size) ^ (self.get_msb(op1valuederef, size) - 1)
              
                 self.set_memory(op1value, op1valuederef, size)
                 
@@ -10453,14 +10761,14 @@ class PyCPU:
 
                 if tempcount > 0:
                     while tempcount:
-                        tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** size)
+                        tempcf = self.get_lsb(op1valuederef)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** size)
                         tempcount -= 1
                         
-                    self.CF = self.get_msb(op1value, size)
+                    self.CF = self.get_msb(op1valuederef, size)
                     
                     if op2value == 1:
-                        self.OF = self.get_msb(op1value, size) ^ (self.get_msb(op1value, size) - 1)
+                        self.OF = self.get_msb(op1valuederef, size) ^ (self.get_msb(op1valuederef, size) - 1)
              
                 self.set_memory(op1value, op1valuederef, size)
                 
@@ -10519,14 +10827,14 @@ class PyCPU:
 
                 if tempcount > 0:
                     while tempcount:
-                        tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** size)
+                        tempcf = self.get_lsb(op1valuederef)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** size)
                         tempcount -= 1
                         
-                    self.CF = self.get_msb(op1value, size)
+                    self.CF = self.get_msb(op1valuederef, size)
                     
                     if op2value == 1:
-                        self.OF = self.get_msb(op1value, size) ^ (self.get_msb(op1value, size) - 1)
+                        self.OF = self.get_msb(op1valuederef, size) ^ (self.get_msb(op1valuederef, size) - 1)
              
                 self.set_memory(op1value, op1valuederef, size)
                 
@@ -10583,11 +10891,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
 
-                result = result & self.get_mask(size)
-                
                 self.set_flags("SAL", op1value, op2value, result, size)
 
                 self.set_register(op1.reg, result, size)
@@ -10605,10 +10911,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1valuederef, op2value, result, size)
 
@@ -10643,10 +10947,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1value, op2value, result, size)
 
@@ -10665,10 +10967,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1valuederef, op2value, result, size)
 
@@ -10699,10 +10999,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1value, op2value, result, size)
 
@@ -10721,10 +11019,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1valuederef, op2value, result, size)
 
@@ -10759,10 +11055,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1value, op2value, result, size)
 
@@ -10781,10 +11075,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1valuederef, op2value, result, size)
 
@@ -10815,10 +11107,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1value, op2value, result, size)
 
@@ -10837,10 +11127,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1valuederef, op2value, result, size)
 
@@ -10875,10 +11163,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1value, op2value, result, size)
                 
@@ -10897,10 +11183,8 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
-                
-                result = result & self.get_mask(size)
                 
                 self.set_flags("SAL", op1valuederef, op2value, result, size)
 
@@ -11707,29 +11991,7 @@ class PyCPU:
             size = 1
             
             if ao:
-                if instruction.repe():
-                    repcount = self.get_register16("CX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.get_register8("AL")
-                        op2value = self.DS + self.get_register16("DI")
-                        
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1value - op2valuederef
-
-                        self.set_flags("CMP", op1value, op2valuederef, result, size)
-                        
-                        if not self.DF:
-                            self.set_register16("DI", op1value + size)
-                        else:
-                            self.set_register16("DI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register16("CX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register16("CX")
                     
                     while repcount and not self.ZF:
@@ -11741,11 +12003,33 @@ class PyCPU:
                         result = op1value - op2valuederef
 
                         self.set_flags("CMP", op1value, op2valuederef, result, size)
+                        
+                        if not self.DF:
+                            self.set_register16("DI", op2value + size)
+                        else:
+                            self.set_register16("DI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register16("CX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register16("CX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.get_register8("AL")
+                        op2value = self.DS + self.get_register16("DI")
+                        
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1value - op2valuederef
+
+                        self.set_flags("CMP", op1value, op2valuederef, result, size)
 
                         if not self.DF:
-                            self.set_register16("DI", op1value + size)
+                            self.set_register16("DI", op2value + size)
                         else:
-                            self.set_register16("DI", op1value - size)
+                            self.set_register16("DI", op2value - size)
                         
                         repcount -= 1
 
@@ -11762,34 +12046,12 @@ class PyCPU:
                     self.set_flags("CMP", op1value, op2value, result, size)
           
                     if not self.DF:
-                        self.set_register16("DI", op1value + size)
+                        self.set_register16("DI", op2value + size)
                     else:
-                        self.set_register16("DI", op1value - size)
+                        self.set_register16("DI", op2value - size)
             
             else:
-                if instruction.repe():
-                    repcount = self.get_register32("ECX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.get_register8("AL")
-                        op2value = self.get_register32("EDI")
-                        
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1value - op2valuederef
-
-                        self.set_flags("CMP", op1value, op2valuederef, result, size)
-
-                        if not self.DF:
-                            self.set_register32("EDI", op1value + size)
-                        else:
-                            self.set_register32("EDI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register32("ECX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register32("ECX")
                     
                     while repcount and not self.ZF:
@@ -11803,9 +12065,31 @@ class PyCPU:
                         self.set_flags("CMP", op1value, op2valuederef, result, size)
 
                         if not self.DF:
-                            self.set_register32("EDI", op1value + size)
+                            self.set_register32("EDI", op2value + size)
                         else:
-                            self.set_register32("EDI", op1value - size)
+                            self.set_register32("EDI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register32("ECX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register32("ECX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.get_register8("AL")
+                        op2value = self.get_register32("EDI")
+                        
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1value - op2valuederef
+
+                        self.set_flags("CMP", op1value, op2valuederef, result, size)
+
+                        if not self.DF:
+                            self.set_register32("EDI", op2value + size)
+                        else:
+                            self.set_register32("EDI", op2value - size)
                         
                         repcount -= 1
 
@@ -11822,9 +12106,9 @@ class PyCPU:
                     self.set_flags("CMP", op1value, op2value, result, size)
              
                     if not self.DF:
-                        self.set_register32("EDI", op1value + size)
+                        self.set_register32("EDI", op2value + size)
                     else:
-                        self.set_register32("EDI", op1value - size)
+                        self.set_register32("EDI", op2value - size)
                         
             opcode = instruction.opcode
             if opcode in self.emu.opcode_handlers:
@@ -11868,29 +12152,7 @@ class PyCPU:
             size = 2
             
             if ao:
-                if instruction.repe():
-                    repcount = self.get_register16("CX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.get_register8("AL")
-                        op2value = self.DS + self.get_register16("DI")
-                        
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1value - op2valuederef
-
-                        self.set_flags("CMP", op1value, op2valuederef, result, size)
-
-                        if not self.DF:
-                            self.set_register16("DI", op1value + size)
-                        else:
-                            self.set_register16("DI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register16("CX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register16("CX")
                     
                     while repcount and not self.ZF:
@@ -11904,9 +12166,31 @@ class PyCPU:
                         self.set_flags("CMP", op1value, op2valuederef, result, size)
 
                         if not self.DF:
-                            self.set_register16("DI", op1value + size)
+                            self.set_register16("DI", op2value + size)
                         else:
-                            self.set_register16("DI", op1value - size)
+                            self.set_register16("DI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register16("CX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register16("CX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.get_register8("AL")
+                        op2value = self.DS + self.get_register16("DI")
+                        
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1value - op2valuederef
+
+                        self.set_flags("CMP", op1value, op2valuederef, result, size)
+
+                        if not self.DF:
+                            self.set_register16("DI", op2value + size)
+                        else:
+                            self.set_register16("DI", op2value - size)
                         
                         repcount -= 1
 
@@ -11923,34 +12207,12 @@ class PyCPU:
                     self.set_flags("CMP", op1value, op2value, result, size)
         
                     if not self.DF:
-                        self.set_register16("DI", op1value + size)
+                        self.set_register16("DI", op2value + size)
                     else:
-                        self.set_register16("DI", op1value - size)
+                        self.set_register16("DI", op2value - size)
             
             else:
-                if instruction.repe():
-                    repcount = self.get_register32("ECX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.get_register8("AL")
-                        op2value = self.get_register32("EDI")
-                        
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1value - op2valuederef
-
-                        self.set_flags("CMP", op1value, op2valuederef, result, size)
-
-                        if not self.DF:
-                            self.set_register32("EDI", op1value + size)
-                        else:
-                            self.set_register32("EDI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register32("ECX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register32("ECX")
                     
                     while repcount and not self.ZF:
@@ -11964,9 +12226,31 @@ class PyCPU:
                         self.set_flags("CMP", op1value, op2valuederef, result, size)
 
                         if not self.DF:
-                            self.set_register32("EDI", op1value + size)
+                            self.set_register32("EDI", op2value + size)
                         else:
-                            self.set_register32("EDI", op1value - size)
+                            self.set_register32("EDI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register32("ECX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register32("ECX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.get_register8("AL")
+                        op2value = self.get_register32("EDI")
+                        
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1value - op2valuederef
+
+                        self.set_flags("CMP", op1value, op2valuederef, result, size)
+
+                        if not self.DF:
+                            self.set_register32("EDI", op2value + size)
+                        else:
+                            self.set_register32("EDI", op2value - size)
                         
                         repcount -= 1
 
@@ -11983,9 +12267,9 @@ class PyCPU:
                     self.set_flags("CMP", op1value, op2value, result, size)
             
                     if not self.DF:
-                        self.set_register32("EDI", op1value + size)
+                        self.set_register32("EDI", op2value + size)
                     else:
-                        self.set_register32("EDI", op1value - size)
+                        self.set_register32("EDI", op2value - size)
                         
             opcode = instruction.opcode
             if opcode in self.emu.opcode_handlers:
@@ -12029,29 +12313,7 @@ class PyCPU:
             size = 4
             
             if ao:
-                if instruction.repe():
-                    repcount = self.get_register16("CX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.get_register8("AL")
-                        op2value = self.DS + self.get_register16("DI")
-                        
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1value - op2valuederef
-
-                        self.set_flags("CMP", op1value, op2valuederef, result, size)
-
-                        if not self.DF:
-                            self.set_register16("DI", op1value + size)
-                        else:
-                            self.set_register16("DI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register16("CX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register16("CX")
                     
                     while repcount and not self.ZF:
@@ -12065,9 +12327,31 @@ class PyCPU:
                         self.set_flags("CMP", op1value, op2valuederef, result, size)
 
                         if not self.DF:
-                            self.set_register16("DI", op1value + size)
+                            self.set_register16("DI", op2value + size)
                         else:
-                            self.set_register16("DI", op1value - size)
+                            self.set_register16("DI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register16("CX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register16("CX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.get_register8("AL")
+                        op2value = self.DS + self.get_register16("DI")
+                        
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1value - op2valuederef
+
+                        self.set_flags("CMP", op1value, op2valuederef, result, size)
+
+                        if not self.DF:
+                            self.set_register16("DI", op2value + size)
+                        else:
+                            self.set_register16("DI", op2value - size)
                         
                         repcount -= 1
 
@@ -12084,34 +12368,12 @@ class PyCPU:
                     self.set_flags("CMP", op1value, op2value, result, size)
                   
                     if not self.DF:
-                        self.set_register16("DI", op1value + size)
+                        self.set_register16("DI", op2value + size)
                     else:
-                        self.set_register16("DI", op1value - size)
+                        self.set_register16("DI", op2value - size)
             
             else:
-                if instruction.repe():
-                    repcount = self.get_register32("ECX")
-                    
-                    while repcount and self.ZF:
-                        op1value = self.get_register8("AL")
-                        op2value = self.get_register32("EDI")
-                        
-                        op2valuederef = self.get_memory(op2value, size)
-                        
-                        result = op1value - op2valuederef
-
-                        self.set_flags("CMP", op1value, op2valuederef, result, size)
-
-                        if not self.DF:
-                            self.set_register32("EDI", op1value + size)
-                        else:
-                            self.set_register32("EDI", op1value - size)
-                        
-                        repcount -= 1
-
-                    self.set_register32("ECX", repcount)
-                    
-                elif instruction.repne():
+                if instruction.repne():
                     repcount = self.get_register32("ECX")
                     
                     while repcount and not self.ZF:
@@ -12125,9 +12387,31 @@ class PyCPU:
                         self.set_flags("CMP", op1value, op2valuederef, result, size)
 
                         if not self.DF:
-                            self.set_register32("EDI", op1value + size)
+                            self.set_register32("EDI", op2value + size)
                         else:
-                            self.set_register32("EDI", op1value - size)
+                            self.set_register32("EDI", op2value - size)
+                        
+                        repcount -= 1
+
+                    self.set_register32("ECX", repcount)
+                    
+                elif instruction.repe():
+                    repcount = self.get_register32("ECX")
+                    
+                    while repcount and self.ZF:
+                        op1value = self.get_register8("AL")
+                        op2value = self.get_register32("EDI")
+                        
+                        op2valuederef = self.get_memory(op2value, size)
+                        
+                        result = op1value - op2valuederef
+
+                        self.set_flags("CMP", op1value, op2valuederef, result, size)
+
+                        if not self.DF:
+                            self.set_register32("EDI", op2value + size)
+                        else:
+                            self.set_register32("EDI", op2value - size)
                         
                         repcount -= 1
 
@@ -12144,9 +12428,9 @@ class PyCPU:
                     self.set_flags("CMP", op1value, op2value, result, size)
                
                     if not self.DF:
-                        self.set_register32("EDI", op1value + size)
+                        self.set_register32("EDI", op2value + size)
                     else:
-                        self.set_register32("EDI", op1value - size)
+                        self.set_register32("EDI", op2value - size)
                         
             opcode = instruction.opcode
             if opcode in self.emu.opcode_handlers:
@@ -14126,11 +14410,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
 
-                result = result & self.get_mask(size)
-                
                 self.set_flags("SHL", op1value, op2value, result, size)
 
                 self.set_register(op1.reg, result, size)
@@ -14148,11 +14430,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
                 
-                result = result & self.get_mask(size)
-
                 self.set_flags("SHL", op1valuederef, op2value, result, size)
 
                 self.set_memory(op1value, result, size)
@@ -14186,11 +14466,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
 
-                result = result & self.get_mask(size)
-                
                 self.set_flags("SHL", op1value, op2value, result, size)
 
                 self.set_register(op1.reg, result, size)
@@ -14208,11 +14486,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
                 
-                result = result & self.get_mask(size)
-
                 self.set_flags("SHL", op1valuederef, op2value, result, size)
 
                 self.set_memory(op1value, result, size)
@@ -14242,11 +14518,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
 
-                result = result & self.get_mask(size)
-                
                 self.set_flags("SHL", op1value, op2value, result, size)
 
                 self.set_register(op1.reg, result, size)
@@ -14264,11 +14538,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
                 
-                result = result & self.get_mask(size)
-
                 self.set_flags("SHL", op1valuederef, op2value, result, size)
 
                 self.set_memory(op1value, result, size)
@@ -14302,11 +14574,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
 
-                result = result & self.get_mask(size)
-                
                 self.set_flags("SHL", op1value, op2value, result, size)
 
                 self.set_register(op1.reg, result, size)
@@ -14324,11 +14594,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
                 
-                result = result & self.get_mask(size)
-
                 self.set_flags("SHL", op1valuederef, op2value, result, size)
 
                 self.set_memory(op1value, result, size)
@@ -14358,11 +14626,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
 
-                result = result & self.get_mask(size)
-                
                 self.set_flags("SHL", op1value, op2value, result, size)
 
                 self.set_register(op1.reg, result, size)
@@ -14380,11 +14646,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
                 
-                result = result & self.get_mask(size)
-
                 self.set_flags("SHL", op1valuederef, op2value, result, size)
 
                 self.set_memory(op1value, result, size)
@@ -14418,11 +14682,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
 
-                result = result & self.get_mask(size)
-                
                 self.set_flags("SHL", op1value, op2value, result, size)
 
                 self.set_register(op1.reg, result, size)
@@ -14440,11 +14702,9 @@ class PyCPU:
                 tempcount = op2value & countmask
                 while tempcount:
                     self.CF = self.get_msb(result, size)
-                    result = result * 2
+                    result = (result * 2) & self.get_mask(size)
                     tempcount -= 1
                 
-                result = result & self.get_mask(size)
-
                 self.set_flags("SHL", op1valuederef, op2value, result, size)
 
                 self.set_memory(op1value, result, size)
@@ -15322,6 +15582,48 @@ class PyCPU:
             result = self.sanitize_value(result, size)
 
             self.set_register(0, result, size)
+
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+        
+        #80 /5 ib SUB r/m8, imm8 Subtract imm8 from r/m8.
+        elif instruction.opcode == 0x80 and instruction.extindex == 0x5:
+
+            size = 1
+
+            if op1.type == pydasm.OPERAND_TYPE_REGISTER:
+                op1value = self.get_register(op1.reg, size)
+                op2value = op2.immediate & self.get_mask(size)
+
+                # Do logic
+                result = op1value - op2value
+
+                self.set_flags("SUB", op1value, op2value, result, size)
+
+                result = self.sanitize_value(result, size)
+
+                self.set_register(op1.reg, result, size)
+
+            elif op1.type == pydasm.OPERAND_TYPE_MEMORY:
+                op1value = self.get_memory_address(instruction, 1, size)
+                op2value = op2.immediate & self.get_mask(size)
+
+                # Do logic
+                op1valuederef = self.get_memory(op1value, size)
+
+                result = op1valuederef - op2value
+
+                self.set_flags("SUB", op1valuederef, op2value, result, size)
+
+                result = self.sanitize_value(result, size)
+
+                self.set_memory(op1value, result, size)
 
             opcode = instruction.opcode
             if opcode in self.emu.opcode_handlers:
