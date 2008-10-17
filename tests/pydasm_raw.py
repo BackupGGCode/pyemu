@@ -22,6 +22,8 @@ rawinstruction = "\xFF\x24\x85\x5E\xAB\xE7\x77"
 rawinstruction = "\x33\x7C\x8D\x48\x19\x03\x00"
 # movsx edx, eax
 rawinstruction = "\x0f\xbe\xc2"
+# repne scasb
+rawinstruction = "\xf2\xae"
 
 instruction = pydasm.get_instruction(rawinstruction, pydasm.MODE_32)
 pyinstruction = PyInstruction(instruction)
