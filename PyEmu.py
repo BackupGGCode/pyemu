@@ -12,10 +12,7 @@
 
 import sys, os, time, struct, re
 
-sys.path.append("lib")
 sys.path.append(r'C:\Program Files\IDA\python')
-
-import pydasm
 
 from PyCPU import PyCPU
 from PyContext import PyContext
@@ -126,11 +123,10 @@ class PyEmu:
     # execute: A public method for executing instructions
     #
     def execute(self, steps=1, start=0x0, end=0x0):
-        if not isinstance(steps, int) or not isinstance(start, int) or not isinstance(end, int):
-            return False
-
+        
         # If we are called we are emulating
         self.emulating = True
+        self.cpu.counts = {}
         
         # Set the instruction pointer to the user supplied address
         if start:
@@ -143,28 +139,26 @@ class PyEmu:
                     if not self.emulating: return False
                     
                     if not self.cpu.execute():
-                        print "[!] Problem executing"
-                        
                         return False
-
                     steps -= 1
             else:
                 while self.cpu.get_register32("EIP") != end:
                     if not self.emulating: return False
-                    
+                         
                     if not self.cpu.execute():
-                        print "[!] Problem executing"
-                        
                         return False
         else:
-            for x in range(steps):
-                if not self.emulating: return False
-                
-                if not self.cpu.execute():
-                    print "[!] Problem executing"
+            if steps > 1:
+                for x in range(steps):
+                    if not self.emulating: return False
                     
-                    return False
-
+                    if not self.cpu.execute():
+                        return False
+            else:
+                while self.emulating:
+                    if not self.cpu.execute():
+                        return False
+                        
         return True
     
     #
@@ -203,7 +197,6 @@ class PyEmu:
                 
             else:    
                 print "[!] Couldnt determine register"
-                
                 return False
             
         return result
@@ -857,6 +850,13 @@ class PEPyEmu(PyEmu):
      
         PyEmu.__init__(self)
    
+        # PE Specific information
+        self.entry_point = None
+        self.image_base = None
+        self.code_base = None
+        self.data_base = None
+        self.sections = {}
+        
         # Store memory limit information
         self.stack_base = stack_base
         self.stack_size = stack_size
@@ -905,4 +905,83 @@ class PEPyEmu(PyEmu):
         self.cpu.FS = 0x003b
         self.cpu.GS = 0x0000
         
+        return True
+
+    #
+    # load: Loads the sections of a binary into the emulator memory
+    #       if you need more control over the loading do it in your
+    #       script ignoring this method.
+    #
+    def load(self, exename):
+        try:
+            import pefile
+        except ImportError:
+            print "[!] Couldnt import pefile"
+            return False
+            
+        # Instantiate our pefile object
+        pe = pefile.PE(exename)
+        
+        self.image_base = pe.OPTIONAL_HEADER.ImageBase
+        self.code_base = pe.OPTIONAL_HEADER.ImageBase + pe.OPTIONAL_HEADER.BaseOfCode
+        self.data_base = pe.OPTIONAL_HEADER.ImageBase + pe.OPTIONAL_HEADER.BaseOfData
+        self.entry_point = pe.OPTIONAL_HEADER.ImageBase + pe.OPTIONAL_HEADER.AddressOfEntryPoint
+        
+        if self.DEBUG > 1:
+            print "[*] Image Base Addr:  0x%08x" % (self.image_base)
+            print "[*] Code Base Addr:   0x%08x" % (self.code_base)
+            print "[*] Data Base Addr:   0x%08x" % (self.data_base)
+            print "[*] Entry Point Addr: 0x%08x\n" % (self.entry_point)
+        
+        # I need to load the image header first
+        headerlen = len(pe.header)
+        
+        if self.DEBUG > 1:
+            print "[*] Loading header of size %x at %x" % (headerlen, self.image_base)
+            
+        for x in range(headerlen):
+            c = pe.header[x]
+            self.set_memory(self.image_base + x, int(ord(c)), size=1)
+        
+        # We loop through the sections in our binary returning a list of info    
+        for section in pe.sections:
+            if self.DEBUG > 1:
+                print "[*] Loading [%s] data into memory" % section.Name.strip('\x00')
+        
+            # Get our section address base
+            sectionbase = self.image_base + section.VirtualAddress
+            virtualsize = section.Misc_VirtualSize
+            sectiondata = section.data
+            sectiondatalen = len(sectiondata)
+            
+            if self.DEBUG > 1:
+                print "[*] Base Addr: 0x%08x (vsize: %08x  dsize: %08x)" % (sectionbase, virtualsize, sectiondatalen)
+            
+            # Grab our data bytes from the section
+            for x in range(sectiondatalen):
+                c = section.data[x]
+                self.set_memory(sectionbase + x, int(ord(c)), size=1)
+            
+            # if we have a section without data lets fill nulls
+            for x in range(virtualsize - sectiondatalen):
+                c = "\x00"
+                self.set_memory(sectionbase + x + sectiondatalen, c, size=1)
+            
+            # append our section to the class list so the user can access it
+            self.sections[section.Name.strip('\x00')] = {"base": sectionbase, "vsize": virtualsize, "dsize": sectiondatalen}
+            #sys.exit()
+        # We must load import directory
+        for entry in pe.DIRECTORY_ENTRY_IMPORT:
+            if self.DEBUG > 1:
+                print "[*] Adding import from %s" % entry.dll
+                
+            for imp in entry.imports:
+                if self.DEBUG > 1:
+                    print '[*]  0x%08x [%20s]' % (imp.address, imp.name)
+                
+                self.os.add_library(entry.dll, imp.name)
+                import_address = self.os.get_library_address(imp.name)
+                if import_address:
+                    self.set_memory(imp.address, import_address, size=4)
+
         return True

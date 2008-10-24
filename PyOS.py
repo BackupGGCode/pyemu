@@ -132,7 +132,8 @@ class PyWindows:
     '''
     class __PEB:
         def __init__(self):
-            self.Address = 0x00000000
+            # I just chose this
+            self.Address = 0x7ffd9000
             
             # *not complete*
             self.InheritedAddressSpace = 0x0

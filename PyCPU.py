@@ -49,6 +49,7 @@ class PyCPU:
                   "ID": 0x200000 }
     
     def __init__(self, emu):
+                
         # We store the emu object so we can communicate and request info
         self.emu = emu
         
@@ -88,6 +89,9 @@ class PyCPU:
         self.VIF = 0
         self.VIP = 0
         self.ID = 0
+        
+        # We cache instructions as they execute for performance
+        self.executed_instructions = {}
         
         # The function table of all the instructions supported.  I use a
         # mnemonic table instead of an opcode map to allow mnemonic handlers.
@@ -1273,7 +1277,7 @@ class PyCPU:
     #          any user pc handlers will be called.  Then we fetch and execute.
     #          
     def execute(self):
-        
+
         # Check our program counter handlers
         if self.EIP in self.emu.pc_handlers:
             if not self.emu.pc_handlers[self.EIP](self.emu, self.EIP):
@@ -1296,43 +1300,47 @@ class PyCPU:
                 return False
                        
         oldeip = self.EIP
-        
-        # Fetch raw instruction from memory
-        rawinstruction = self.get_memory(self.EIP, 32)
-        if not rawinstruction:
-            print "[!] Problem fetching raw bytes from 0x%08x" % (self.EIP)
+
+        #
+        # We track instructions executed so we can greatly increase performance
+        #
+        if self.EIP not in self.executed_instructions:        
+            # Fetch raw instruction from memory, 13 bytes seems to be the largest possible instruction
+            rawinstruction = self.get_memory(self.EIP, 13)
+            if not rawinstruction:
+                print "[!] Problem fetching raw bytes from 0x%08x" % (self.EIP)
+                return False
             
-            return False
+            # Decode instruction from raw returning a pydasm.instruction
+            instruction = pydasm.get_instruction(rawinstruction, pydasm.MODE_32)
+            if not instruction:
+                print "[!] Problem decoding instruction"
+                return False
+    
+            # Create our python class for instruction, we do this in case we ever leave pydasm
+            pyinstruction = PyInstruction(instruction)
         
-        # Decode instruction from raw returning a pydasm.instruction
-        instruction = pydasm.get_instruction(rawinstruction, pydasm.MODE_32)
-        if not instruction:
-            print "[!] Problem decoding instruction"
-            
-            return False
-        
-        # Create our python class for instruction, we do this in case we ever leave pydasm
-        pyinstruction = PyInstruction(instruction)
-        
+            self.executed_instructions[self.EIP] = pyinstruction
+        else:
+            pyinstruction = self.executed_instructions[self.EIP]
+                
         if self.DEBUG > 0:
-            print "[*] Executing [0x%x][%x] %s" % (self.EIP, pyinstruction.opcode, pyinstruction.disasm)
+            print "[*] Executing [0x%x][%x] %s" % (self.EIP, pyinstruction.opcode, self.get_disasm())
         
-        # An oversight in pydasm mnemonic parsing
+        # We must split any prefix sense we use flags
         pyinstruction.mnemonic = pyinstruction.mnemonic.split()
         if pyinstruction.mnemonic[0] in ["rep", "repe", "repne", "lock"]:
             pyinstruction.mnemonic = pyinstruction.mnemonic[1]
         else:
             pyinstruction.mnemonic = pyinstruction.mnemonic[0]
-        
+
         # Check if we support this instruction
         if pyinstruction.mnemonic in self.supported_instructions:
             # Execute!
             if not self.supported_instructions[pyinstruction.mnemonic](pyinstruction):
-                
                 return False
         else:
             print "[!] Unsupported instruction %s" % pyinstruction.mnemonic
-            
             return False
         
         # If EIP has not changed we advance to the next instruction in code
@@ -1772,23 +1780,22 @@ class PyCPU:
     #
     # get_disasm: will fetch the current instruction and pretty it up
     #
-    def get_disasm(self, instruction=None):
+    def get_disasm(self):
         if not self.emu.memory.is_valid(self.EIP):
             return False
             
-        if not instruction:
-            rawinstruction = self.get_memory(self.EIP, 32)
-            if not rawinstruction:
-                print "[!] Problem fetching raw bytes from 0x%08x" % (self.EIP)
-                
-                return False
+        rawinstruction = self.get_memory(self.EIP, 32)
+        if not rawinstruction:
+            print "[!] Problem fetching raw bytes from 0x%08x" % (self.EIP)
             
-            # Decode instruction from raw returning a pydasm.instruction
-            instruction = pydasm.get_instruction(rawinstruction, pydasm.MODE_32)
-            if not instruction:
-                print "[!] Problem decoding instruction"
-                
-                return False
+            return False
+        
+        # Decode instruction from raw returning a pydasm.instruction
+        instruction = pydasm.get_instruction(rawinstruction, pydasm.MODE_32)
+        if not instruction:
+            print "[!] Problem decoding instruction"
+            
+            return False
         
         return pydasm.get_instruction_string(instruction, pydasm.FORMAT_INTEL, self.EIP).rstrip(" ")
     
@@ -6603,10 +6610,12 @@ class PyCPU:
         op1valuederef = None
         op2valuederef = None
 
+        #print "%x - %x" % (self.EIP, instruction.opcode)
+        
         #8D /r LEA r16,m Store effective address for m in register r16
         #8D /r LEA r32,m Store effective address for m in register r32
         if instruction.opcode == 0x8d:
-            
+
             if so:
                 size = 2
             else:

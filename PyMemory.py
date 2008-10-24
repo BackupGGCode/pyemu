@@ -105,33 +105,6 @@ class PyMemory:
         self.pages = {}
         self.fault = True
     
-    def __get_memory_pages(self, address, size):
-        rawbytes = ""
-        
-        page = address & 0xfffff000
-        offset = address & 0x00000fff
-        
-        (d, m) = divmod(size, self.PAGESIZE)
-        
-        pages = range(page, page + (d * self.PAGESIZE), self.PAGESIZE)
-        for page in pages:
-            if page not in self.pages:
-                print "[!] 0x%08x not in our pages" % page
-                raise Exception('This page does not exist')
-            
-            for b in range(self.PAGESIZE - 1):
-                rawbytes += self.pages[page].data[b]
-        
-        if m:
-            page = (address + size) & 0xfffff000
-            if page not in self.pages:
-                    print "[!] 0x%08x not in our pages" % page
-                    raise Exception('This page does not exist')
-                    
-            for b in range(m):
-                rawbytes += self.pages[page].data[b]
-        
-        return rawbytes
     #
     # get_memory: Fetches memory first checking local cache, then
     #             calling the child memory allocator
@@ -142,101 +115,46 @@ class PyMemory:
         
         if self.DEBUG >= 2:
             print "[*] Trying to get memory @ %x" % (address)
+
+        # I need to get the number of pages        
+        (d, r) = divmod(offset + size, self.PAGESIZE)
         
-        if size > self.PAGESIZE:
-            print "[*] Trying to fetch across pages"
-            return self.__get_memory_pages(address, size)
-            
-        # Check our cache and fetch if not found
-        if page in self.pages:
-            # Return from our cache
-            rawbytes = ""
+        if r:
+            d += 1
+
+        oldsize = size
+        rawbytes = ""
+        for page in xrange(page, page + (d * self.PAGESIZE), self.PAGESIZE):
+            # We must get our memory
+            if page not in self.pages:
+                if not self.get_page(page):
+                    print "[!] Invalid memory"
+                    
+                    return self.emu.raise_exception("GP", page)
+                
             for x in xrange(0, size):
-                if (page + offset + x) >= (page + self.PAGESIZE):
-                    newpage = (page + offset + x) & 0xfffff000
-                    if newpage not in self.pages:
-                        if not self.get_page(newpage):
-                            print "[!] Invalid memory"
-                            
-                            return self.emu.raise_exception("GP", page + offset + x)
-                        else:
-                            page = newpage
-                            offset = 0x00000000
-                            
-                            for y in xrange(0, size - x):
-                                rawbytes += self.pages[page].data[offset+y]
-                            
-                            break
-                    else:
-                        page = newpage
-                        offset = 0x00000000
-                        
-                        for y in xrange(0, size - x):
-                            try:
-                                rawbytes += self.pages[page].data[offset+y]
-                            except:
-                                # XXX Needs proper debugging messages
-                                print "problem page %x, offset %x, y %x" % (page, offset, y)
-                                raise Exception("Problem fetching bytes from page cache")
-                        
-                        break
-                        
-                rawbytes += self.pages[page].data[offset+x]
-            
-            if size == 1:
-                return struct.unpack("<B", rawbytes)[0]
-            elif size == 2:
-                return struct.unpack("<H", rawbytes)[0]
-            elif size == 4:
-                return struct.unpack("<L", rawbytes)[0]
-            else:
-                return rawbytes
-        else:
-            if self.DEBUG >= 2:
-                print "[*] Couldnt find page %x fetching" % (page)
-                
-            # We need to fetch this
-            if not self.get_page(page):
-                print "[!] Invalid memory"
-                
-                return self.emu.raise_exception("GP", address)
-            else:
-                rawbytes = ""
-                for x in xrange(0, size):
-                    if (page + offset + x) >= (page + self.PAGESIZE):
-                        newpage = (page + offset + x) & 0xfffff000
-                        if newpage not in self.pages:
-                            if not self.get_page(newpage):
-                                print "[!] Invalid memory"
-                                
-                                return self.emu.raise_exception("GP", page + offset + x)
-                            else:
-                                page = newpage
-                                offset = 0x00000000
-                                
-                                for y in xrange(0, size - x):
-                                    rawbytes += self.pages[page].data[offset+y]
-                                
-                                break
-                        else:
-                            page = newpage
-                            offset = 0x00000000
-                            
-                            for y in xrange(0, size - x):
-                                rawbytes += self.pages[page].data[offset+y]
-                            
-                            break
-                            
-                    rawbytes += self.pages[page].data[offset+x]
-                
-                if size == 1:
-                    return struct.unpack("<B", rawbytes)[0]
-                elif size == 2:
-                    return struct.unpack("<H", rawbytes)[0]
-                elif size == 4:
-                    return struct.unpack("<L", rawbytes)[0]
+                if address < (page + self.PAGESIZE):
+                    # Do stuff on this page
+                    try:
+                        rawbytes += self.pages[page].data[address & 0x00000fff]
+                    except IndexError:
+                        print "%05x:%03x" % (page, address & 0x00000fff)
+                        print "data %x" % (len(self.pages[page].data))
+                        sys.exit()
+                    address += 1
                 else:
-                    return rawbytes
+                    size -= x
+                    break
+        size = oldsize
+        
+        if size == 1:
+            return struct.unpack("<B", rawbytes)[0]
+        elif size == 2:
+            return struct.unpack("<H", rawbytes)[0]
+        elif size == 4:
+            return struct.unpack("<L", rawbytes)[0]
+        else:
+            return rawbytes
                         
         return False
     
@@ -266,38 +184,43 @@ class PyMemory:
             # We need to pack the values into native endian
             packedvalue = value[::-1]
         else:
-            print "[!] Dont understand this value type %s" % type(value)
+            print "[!] Don't understand this value type %s" % type(value)
             
             return False
-            
-        # Check our page if not fetch
-        if page in self.pages:
-            newdata = self.pages[page].data[:offset]
+        
+        # I need to get the number of pages        
+        (d, r) = divmod(offset + size, self.PAGESIZE)
+        
+        if r:
+            d += 1
+
+        oldsize = size
+        for page in xrange(page, page + (d * self.PAGESIZE), self.PAGESIZE):
+            # We must get our memory
+            if page not in self.pages:
+                if not self.get_page(page):
+                    print "[!] Invalid memory"
+                    
+                    return self.emu.raise_exception("GP", page)
+  
+            newdata = self.pages[page].data[:address & 0x00000fff]
             for x in xrange(0, size):
-                newdata += packedvalue[x]
-            newdata += self.pages[page].data[offset + size:]
-            
-            self.pages[page].set_data(newdata)
-            
-            return True
-        else:
-            # We need to fetch this
-            if not self.get_page(page):
-                print "[!] Invalid memory"
-                
-                return self.emu.raise_exception("GP", address)
-            else:
-                newdata = self.pages[page].data[:offset]
-                for x in xrange(0, size):
+                if address < (page + self.PAGESIZE):
+                    # Do stuff on this page
                     newdata += packedvalue[x]
-                newdata += self.pages[page].data[offset + size:]
-                
-                self.pages[page].set_data(newdata)
-                
-                return True
+                    address += 1
+                else:
+                    packedvalue = packedvalue[x:]
+                    size -= x
+                    break
             
-        return False
-    
+            if address & 0x00000fff:    
+                newdata += self.pages[page].data[(address & 0x00000fff):]
+                    
+            self.pages[page].set_data(newdata)
+                
+        return True
+     
     #
     # get_available_page: Will return the next available page starting from address
     #

@@ -201,17 +201,16 @@ class PyInstruction:
         self.immbytes = instruction.immbytes
         self.sectionbytes = instruction.sectionbytes
         self.flags = instruction.flags
-        
+
+        #
+        # In the future we'll use a PyOperand class, for now its to slow
+        #        
         if instruction.op1.type:
-            self.op1 = PyOperand(instruction.op1)
-            
+            self.op1 = instruction.op1
         if instruction.op2.type:
-            self.op2 = PyOperand(instruction.op2)
-            
+            self.op2 = instruction.op2
         if instruction.op3.type:
-            self.op3 = PyOperand(instruction.op3)
+            self.op3 = instruction.op3
         
-        # Disassembly string of instruction
-        self.disasm = pydasm.get_instruction_string(instruction, pydasm.FORMAT_INTEL, 0x0).rstrip(" ")
         self.mnemonic = pydasm.get_mnemonic_string(instruction, pydasm.FORMAT_INTEL).rstrip(" ")
    
