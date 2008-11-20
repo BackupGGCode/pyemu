@@ -148,7 +148,7 @@ class PyEmu:
                     if not self.cpu.execute():
                         return False
         else:
-            if steps > 1:
+            if steps >= 1:
                 for x in range(steps):
                     if not self.emulating: return False
                     
