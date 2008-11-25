@@ -2987,7 +2987,7 @@ class PyCPU:
                 # dec esp
                 esp = self.get_register32("ESP") - 4
                 
-                # store returneip
+                # store return eip
                 self.set_memory32(esp, returneip)
                 
                 # set new esp
@@ -7089,7 +7089,8 @@ class PyCPU:
                     offset = op2.displacement
                     baseaddress = self.emu.get_selector(fs).base
                     
-                    op1value = self.get_memory(baseaddress + offset, asize)
+                    # This is the address pointed to by the selector
+                    op1value = baseaddress + offset
                 else:
                     op1value = self.get_memory_address(instruction, 1, asize)
                     
@@ -7260,7 +7261,8 @@ class PyCPU:
                 offset = op2.displacement
                 baseaddress = self.emu.get_selector(fs).base
                 
-                op2value = self.get_memory(baseaddress + offset, asize)
+                # This is the address the selector points to
+                op2value = baseaddress + offset
                 self.set_register(0, op2value, osize)
             else:
                 op2value = self.get_memory_address(instruction, 2, asize)

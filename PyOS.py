@@ -74,6 +74,23 @@ class PyWindows:
         return True
     
     #
+    # add_fake_library: Handles addition of libraries that you wont load
+    #                   like in the case of IDAPyEmu
+    #
+    def add_fake_library(self, function, address):
+        for library in self.libraries:
+            if function == self.libraries[library]['name']:
+                return True
+        
+        
+        if self.DEBUG >= 1:
+            print "[*] Adding fake library %s address 0x%08x" % (function, address)
+        
+        self.libraries[address] = {'address': address, 'name': function}
+        
+        return True
+        
+    #
     # add_library: Handles addition of libraries to the OS.  This lets us
     #              call any user handlers when we call into this function
     #
