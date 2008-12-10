@@ -1264,7 +1264,7 @@ class PyCPU:
         if msb:
             signextended = ((dest_max << orig_shift) | masknumber) & dest_max
         else:
-            signextended = number & dest_max
+            signextended = masknumber & dest_max
         
         return signextended
     
