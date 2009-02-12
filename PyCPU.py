@@ -1374,7 +1374,10 @@ class PyCPU:
         scale = instruction.get_scale()
         index = instruction.get_index()
         base = instruction.get_base()
-                
+
+        # XXX Temp fix for address override oversight
+        size = 4
+                        
         if size == 2:
             # do 16 bit
             if mod == 0x0:
@@ -1909,6 +1912,11 @@ class PyCPU:
         if instruction.opcode == 0x10:
 
             size = 1
+
+            if ao:
+                asize = 2
+            else:
+                asize = 4
 
             if op1.type == pydasm.OPERAND_TYPE_REGISTER:
                 op1value = self.get_register(op1.reg, size)
@@ -12729,9 +12737,6 @@ class PyCPU:
         so = instruction.operand_so()
         ao = instruction.address_so()
 
-        
-        
-
         op1value = ""
         op2value = ""
         op3value = ""
@@ -12795,9 +12800,6 @@ class PyCPU:
         so = instruction.operand_so()
         ao = instruction.address_so()
 
-        
-        
-
         op1value = ""
         op2value = ""
         op3value = ""
@@ -12860,7 +12862,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -12924,7 +12925,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -12988,7 +12988,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13052,7 +13051,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13116,7 +13114,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13180,7 +13177,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13244,7 +13240,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13308,7 +13303,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13372,7 +13366,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13436,7 +13429,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13500,7 +13492,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13564,7 +13555,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13628,7 +13618,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13692,7 +13681,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13756,7 +13744,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13820,7 +13807,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13884,7 +13870,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -13948,7 +13933,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -14012,7 +13996,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -14076,7 +14059,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -14140,7 +14122,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -14205,7 +14186,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -14269,7 +14249,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -14333,7 +14312,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -14397,7 +14375,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -14749,7 +14726,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -15956,7 +15932,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
@@ -16102,7 +16077,6 @@ class PyCPU:
 
         so = instruction.operand_so()
         ao = instruction.address_so()
-        
 
         op1value = ""
         op2value = ""
