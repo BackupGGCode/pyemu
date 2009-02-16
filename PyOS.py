@@ -103,7 +103,7 @@ class PyWindows:
         if isinstance(dll, str):
             handle  = windll.kernel32.LoadLibraryA(dll)
             address = windll.kernel32.GetProcAddress(handle, function)
-        elif isinstance(dll, long):
+        elif isinstance(dll, long) or isinstance(dll, int):
             handle = dll
             address = windll.kernel32.GetProcAddress(handle, function)
         else:
