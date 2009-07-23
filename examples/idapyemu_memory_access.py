@@ -3,14 +3,14 @@
 import sys, os, time, struct, re, string
 
 # !!! set your pyemu path plz2u !!!
-sys.path.append(r'C:\Code\Python\pyemu')
-sys.path.append(r'C:\Code\Python\pyemu\lib')
+sys.path.append(r'C:\Code\Python\public\pyemu')
+sys.path.append(r'C:\Code\Python\public\pyemu\lib')
 
 from PyEmu import *
 
 def my_memory_access_handler(emu, address, value, size, type):
     print "[*] Hit my_memory_access_handler %x: %s (%x, %x, %x, %s)" % (emu.get_register("EIP"), emu.get_disasm(), address, value, size, type)
-
+    
     return True
 
 emu = IDAPyEmu()
@@ -39,15 +39,43 @@ while currentdata <= dataend:
 
 print "[*] Data section loaded into memory"
 
+print "[*] Loading import section bytes into memory"
+importstart = SegByName(".idata")
+importend = SegEnd(importstart)
+
+currentimport = importstart
+fakeaddress = 0x70000000
+while currentimport <= importend:
+    importname = Name(currentimport)
+    
+    emu.os.add_fake_library(importname, fakeaddress)
+    emu.set_memory(currentimport, fakeaddress, size=4)
+    
+    currentimport += 4
+    fakeaddress += 4
+
+print "[*] Import section loaded into memory"
+
+def getmodulehandlea(name, address):
+    print "boooyeah"
+    
+    return False
+    
 # Start the program counter at the current location in the disassembly window
 emu.set_register("EIP", ScreenEA())
 
 # Set up our memory access handler
 emu.set_memory_access_handler(my_memory_access_handler)
 
-# Whether we want to fault on bad memory access (default True)
-emu.memory.fault = False
+# Set our library handler
+emu.set_library_handler("_imp__GetModuleHandleA", getmodulehandlea)
+emu.set_register("EIP", 0x01012475)
+emu.debug(1)
 
-emu.execute(start=0x0100BD72, end=0x0100BD79)
+while emu.get_register("EIP") != 0x01012491:
+    emu.dump_regs()
+    if not emu.execute():
+        print "[!] Problem executing"
+        break
 
 print "[*] Done"

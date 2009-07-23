@@ -2585,7 +2585,7 @@ class PyCPU:
         #23 /r AND r32,r/m32 r32  r/m32
         elif instruction.opcode == 0x23:
 
-            op1value = self.get_register(op1.reg, size)
+            op1value = self.get_register(op1.reg, osize)
 
             if op2.type == pydasm.OPERAND_TYPE_REGISTER:
                 op2value = self.get_register(op2.reg, osize)
@@ -4671,7 +4671,7 @@ class PyCPU:
                     
                     self.set_flags("IMUL", op2value, op3value, result, osize)
                     
-                    self.set_register(op1.reg, result, oosize)
+                    self.set_register(op1.reg, result, osize)
                     
                 elif op2.type == pydasm.OPERAND_TYPE_MEMORY:
                     op2value = self.get_memory_address(instruction, 2, asize)
@@ -7899,7 +7899,7 @@ class PyCPU:
             op1value = self.get_register(op1.reg, osize)
 
             if op2.type == pydasm.OPERAND_TYPE_REGISTER:
-                op2value = self.get_register(op2.reg, osize)
+                op2value = self.get_register(op2.reg, 1)
                 
                 result = self.sign_extend(op2value, 1, osize)
     
@@ -7929,7 +7929,7 @@ class PyCPU:
             op1value = self.get_register(op1.reg, osize)
 
             if op2.type == pydasm.OPERAND_TYPE_REGISTER:
-                op2value = self.get_register(op2.reg, osize)
+                op2value = self.get_register(op2.reg, 2)
                 
                 result = self.sign_extend(op2value, 2, osize)
     
@@ -7998,7 +7998,7 @@ class PyCPU:
             op1value = self.get_register(op1.reg, osize)
 
             if op2.type == pydasm.OPERAND_TYPE_REGISTER:
-                op2value = self.get_register(op2.reg, osize)
+                op2value = self.get_register(op2.reg, 1)
                 
                 result = op2value
     
@@ -8028,7 +8028,7 @@ class PyCPU:
             op1value = self.get_register(op1.reg, osize)
 
             if op2.type == pydasm.OPERAND_TYPE_REGISTER:
-                op2value = self.get_register(op2.reg, osize)
+                op2value = self.get_register(op2.reg, 2)
                 
                 result = op2value
     
@@ -10546,7 +10546,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** osize)
+                        op1value = (op1value / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1value, osize)
@@ -10568,7 +10568,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op1valuederef)
-                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** osize)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1valuederef, osize)
@@ -10604,7 +10604,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** osize)
+                        op1value = (op1value / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1value, osize)
@@ -10629,7 +10629,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op1valuederef)
-                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** osize)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1valuederef, osize)
@@ -10663,7 +10663,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** osize)
+                        op1value = (op1value / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1value, osize)
@@ -10685,7 +10685,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op1valuederef)
-                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** osize)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1valuederef, osize)
@@ -10721,7 +10721,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** osize)
+                        op1value = (op1value / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1value, osize)
@@ -10746,7 +10746,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op1valuederef)
-                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** osize)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1valuederef, osize)
@@ -10780,7 +10780,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** osize)
+                        op1value = (op1value / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1value, osize)
@@ -10802,7 +10802,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op1valuederef)
-                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** osize)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1valuederef, osize)
@@ -10837,8 +10837,8 @@ class PyCPU:
 
                 if tempcount > 0:
                     while tempcount:
-                        tempcf = self.get_lsb(op2value)
-                        op1value = (op1value / 2) + (tempcf * 2 ** osize)
+                        tempcf = self.get_lsb(op1value)
+                        op1value = (op1value / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1value, osize)
@@ -10863,7 +10863,7 @@ class PyCPU:
                 if tempcount > 0:
                     while tempcount:
                         tempcf = self.get_lsb(op1valuederef)
-                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** osize)
+                        op1valuederef = (op1valuederef / 2) + (tempcf * 2 ** (osize * 8 - 1))
                         tempcount -= 1
                         
                     self.CF = self.get_msb(op1valuederef, osize)
@@ -13109,7 +13109,7 @@ class PyCPU:
             osize = 1
 
             if op1.type == pydasm.OPERAND_TYPE_REGISTER:
-                op1value = self.get_register(op1.reg, oosize)
+                op1value = self.get_register(op1.reg, osize)
 
                 # Do logic
                 if not self.CF:
@@ -16170,6 +16170,29 @@ class PyCPU:
                     self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
                 else:
                     self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+        
+        # A8 ib TEST AL, imm8  AND imm8 with AL; set SF, ZF, PF according to result.
+        elif instruction.opcode == 0xa8:
+
+            osize = 1
+
+            op1value = self.get_register(0, osize)
+            op2value = op2.immediate & self.get_mask(osize)
+
+            # Do logic
+            result = op1value & op2value
+
+            self.set_flags("LOGIC", op1value, op2value, result, osize)
+
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+
 
         #F6 /0 ib TEST r/m8,imm8 AND imm8 with r/m8; set SF, ZF, PF according to result
         elif instruction.opcode == 0xf6 and instruction.extindex == 0x0:
