@@ -133,6 +133,9 @@ class PyCPU:
                                         "jnz": lambda instruction: self.JNZ(instruction),
                                         "js": lambda instruction: self.JS(instruction),
                                         "jz": lambda instruction: self.JZ(instruction),
+                                        "jp": lambda instruction: self.JP(instruction),
+                                        "jnp": lambda instrcution: self.JNP(instruction),
+                                        "jpo": lambda instruction: self.JPO(instruction),
                                         "lea": lambda instruction: self.LEA(instruction),
                                         "leave": lambda instruction: self.LEAVE(instruction),
                                         "loop": lambda instruction: self.LOOP(instruction),
@@ -6648,6 +6651,244 @@ class PyCPU:
 
             # Do logic
             if self.ZF:
+                result = self.get_register32("EIP") + instruction.length + op1value
+                
+                self.set_register32("EIP", result)
+
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+                    
+        else:
+            return False
+
+        mnemonic = instruction.mnemonic.upper()
+        if mnemonic in self.emu.mnemonic_handlers:
+            if op1valuederef != None and op2valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+            elif op2valuederef != None and op1valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+            else:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2value, op3value)
+                
+        return True
+
+    def JP(self, instruction):
+        op1 = instruction.op1
+        op2 = instruction.op2
+
+        oo = instruction.operand_so()
+        ao = instruction.address_so()
+
+        if oo:
+            osize = 2
+        else:
+            osize = 4
+
+        if ao:
+            asize = 2
+        else:
+            asize = 4
+            
+        op1value = ""
+        op2value = ""
+        op3value = ""
+        op1valuederef = None
+        op2valuederef = None
+
+        # 0F 8A cw JP rel16  Valid Jump near if parity (PF=1). Not supported in 64-bit mode.  
+        # 0F 8A cd JP rel32 Valid Valid Jump near if parity (PF=1).
+        if instruction.opcode == 0x8A:
+
+            op1value = op1.immediate
+
+            # Do logic
+            if self.PF:
+                result = self.get_register32("EIP") + instruction.length + op1value
+
+                self.set_register32("EIP", result)
+
+            opcode = 0x0f << 7 | instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+                    
+        # 7A cb JP rel8 Jump short if parity (PF=1).
+        elif instruction.opcode == 0x7A:
+
+            osize = 1
+
+            op1value = op1.immediate
+
+            # Do logic
+            if self.PF:
+                result = self.get_register32("EIP") + instruction.length + op1value
+                
+                self.set_register32("EIP", result)
+
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+                    
+        else:
+            return False
+
+        mnemonic = instruction.mnemonic.upper()
+        if mnemonic in self.emu.mnemonic_handlers:
+            if op1valuederef != None and op2valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+            elif op2valuederef != None and op1valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+            else:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2value, op3value)
+                
+        return True
+
+    def JNP(self, instruction):
+        op1 = instruction.op1
+        op2 = instruction.op2
+
+        oo = instruction.operand_so()
+        ao = instruction.address_so()
+
+        if oo:
+            osize = 2
+        else:
+            osize = 4
+
+        if ao:
+            asize = 2
+        else:
+            asize = 4
+            
+        op1value = ""
+        op2value = ""
+        op3value = ""
+        op1valuederef = None
+        op2valuederef = None
+
+        # 0F 8B cd JNP rel32 Jump near if not parity (PF=0).
+        if instruction.opcode == 0x8B:
+
+            op1value = op1.immediate
+
+            # Do logic
+            if not self.PF:
+                result = self.get_register32("EIP") + instruction.length + op1value
+
+                self.set_register32("EIP", result)
+
+            opcode = 0x0f << 7 | instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+                    
+        # 7B cb JNP rel8 Jump short if not parity (PF=0).
+        elif instruction.opcode == 0x7B:
+
+            osize = 1
+
+            op1value = op1.immediate
+
+            # Do logic
+            if not self.PF:
+                result = self.get_register32("EIP") + instruction.length + op1value
+                
+                self.set_register32("EIP", result)
+
+            opcode = instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+                    
+        else:
+            return False
+
+        mnemonic = instruction.mnemonic.upper()
+        if mnemonic in self.emu.mnemonic_handlers:
+            if op1valuederef != None and op2valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+            elif op2valuederef != None and op1valuederef == None:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+            else:
+                self.emu.mnemonic_handlers[mnemonic](self.emu, mnemonic, self.get_register32("EIP"), op1value, op2value, op3value)
+                
+        return True
+
+    def JPO(self, instruction):
+        op1 = instruction.op1
+        op2 = instruction.op2
+
+        oo = instruction.operand_so()
+        ao = instruction.address_so()
+
+        if oo:
+            osize = 2
+        else:
+            osize = 4
+
+        if ao:
+            asize = 2
+        else:
+            asize = 4
+            
+        op1value = ""
+        op2value = ""
+        op3value = ""
+        op1valuederef = None
+        op2valuederef = None
+
+        # 0F 8B cd JPO rel32 Jump near if parity odd (PF=0).
+        if instruction.opcode == 0x8B:
+
+            op1value = op1.immediate
+
+            # Do logic
+            if not self.PF:
+                result = self.get_register32("EIP") + instruction.length + op1value
+
+                self.set_register32("EIP", result)
+
+            opcode = 0x0f << 7 | instruction.opcode
+            if opcode in self.emu.opcode_handlers:
+                if op1valuederef != None and op2valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1valuederef, op2value, op3value)
+                elif op2valuederef != None and op1valuederef == None:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2valuederef, op3value)
+                else:
+                    self.emu.opcode_handlers[opcode](self.emu, opcode, self.get_register32("EIP"), op1value, op2value, op3value)
+                    
+        # 7B cb JPO rel8 Jump short if parity odd (PF=0).
+        elif instruction.opcode == 0x7B:
+
+            osize = 1
+
+            op1value = op1.immediate
+
+            # Do logic
+            if not self.PF:
                 result = self.get_register32("EIP") + instruction.length + op1value
                 
                 self.set_register32("EIP", result)
